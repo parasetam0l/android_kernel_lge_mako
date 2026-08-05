@@ -348,9 +348,7 @@ CHECK		= sparse
 # mako bring-up: built with gcc 9.3 (bootlin toolchain); the historical
 # gcc-wrapper.py (warnings-as-errors) is bypassed for modern gcc.
 CC		= $(REAL_CC)
-# gcc 9 defaults to -fno-common, which breaks 3.4 kernels (multiple
-# definition errors for header-defined globals); restore -fcommon.
-KBUILD_CFLAGS	+= -fcommon
+
 
 CHECKFLAGS     := -D__linux__ -Dlinux -D__STDC__ -Dunix -D__unix__ \
 		  -Wbitwise -Wno-return-void $(CF)
@@ -376,6 +374,9 @@ KBUILD_CFLAGS   := -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs \
 		   -Werror-implicit-function-declaration \
 		   -Wno-format-security \
 		   -fno-delete-null-pointer-checks
+# gcc 9 defaults to -fno-common, which breaks 3.4 kernels (multiple
+# definition errors for header-defined globals); restore -fcommon.
+KBUILD_CFLAGS   += -fcommon
 KBUILD_AFLAGS_KERNEL :=
 KBUILD_CFLAGS_KERNEL :=
 KBUILD_AFLAGS   := -D__ASSEMBLY__
