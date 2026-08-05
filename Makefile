@@ -374,9 +374,10 @@ KBUILD_CFLAGS   := -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs \
 		   -Werror-implicit-function-declaration \
 		   -Wno-format-security \
 		   -fno-delete-null-pointer-checks
-# gcc 9 defaults to -fno-common, which breaks 3.4 kernels (multiple
-# definition errors for header-defined globals); restore -fcommon.
-KBUILD_CFLAGS   += -fcommon
+# gcc 9 defaults to -fno-common and C99+ inline semantics, both of which
+# break 3.4 kernels (multiple definition errors, missing out-of-line
+# definitions for plain 'inline' functions).  Restore gnu89 + -fcommon.
+KBUILD_CFLAGS   += -fcommon -std=gnu89
 KBUILD_AFLAGS_KERNEL :=
 KBUILD_CFLAGS_KERNEL :=
 KBUILD_AFLAGS   := -D__ASSEMBLY__
