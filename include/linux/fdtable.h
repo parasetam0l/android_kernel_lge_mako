@@ -20,6 +20,7 @@
  * as this is the granularity returned by copy_fdset().
  */
 #define NR_OPEN_DEFAULT BITS_PER_LONG
+#define NR_OPEN_MAX ~0U
 
 struct fdtable {
 	unsigned int max_fds;
@@ -131,6 +132,8 @@ extern void __fd_install(struct files_struct *files,
 		      unsigned int fd, struct file *file);
 extern int __close_range(unsigned int fd, unsigned int max_fd,
 			 unsigned int flags);
+extern int unshare_fd(unsigned long unshare_flags,
+		   struct files_struct **new_fdp);
 extern int __close_fd(struct files_struct *files,
 		      unsigned int fd);
 

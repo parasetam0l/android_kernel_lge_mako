@@ -16,6 +16,7 @@
 #include <linux/vmalloc.h>
 #include <linux/file.h>
 #include <linux/fdtable.h>
+#include <linux/close_range.h>
 #include <linux/bitmap.h>
 #include <linux/bitops.h>
 #include <linux/limits.h>
@@ -634,33 +635,16 @@ int __close_range(unsigned fd, unsigned max_fd, unsigned int flags)
 
 	if (flags & CLOSE_RANGE_UNSHARE) {
 		int ret;
-		unsigned int max_unshare_fds = NR_OPEN_MAX;
-
-		/*
-		 * If the caller requested all fds to be made cloexec we always
-		 * copy all of the file descriptors since they still want to
-		 * use them.
-		 */
-		if (!(flags & CLOSE_RANGE_CLOEXEC)) {
-			/*
-			 * If the requested range is greater than the current
-			 * maximum, we're closing everything so only copy all
-			 * file descriptors beneath the lowest file descriptor.
-			 */
-			rcu_read_lock();
-			if (max_fd >= last_fd(files_fdtable(cur_fds)))
-				max_unshare_fds = fd;
-			rcu_read_unlock();
-		}
-
-		ret = unshare_fd(CLONE_FILES, max_unshare_fds, &fds);
-		if (ret)
-			return ret;
 
 		/*
 		 * We used to share our file descriptor table, and have now
 		 * created a private one, make sure we're using it below.
+		 * (3.4's unshare_fd has no max_fds copy optimization.)
 		 */
+		ret = unshare_fd(CLONE_FILES, &fds);
+		if (ret)
+			return ret;
+
 		if (fds)
 			swap(cur_fds, fds);
 	}
