@@ -136,6 +136,13 @@ extern unsigned int kobjsize(const void *objp);
 #define VM_SAO		0x20000000	/* Strong Access Ordering (powerpc) */
 #define VM_PFN_AT_MMAP	0x40000000	/* PFNMAP vma that is fully mapped at mmap time */
 #define VM_MERGEABLE	0x80000000	/* KSM may merge identical pages */
+/*
+ * VM_WIPEONFORK reuses the powerpc-only VM_SAO bit.  On ARM nothing ever sets
+ * VM_SAO, and its generic consumers (KSM merge check, VM_NO_THP) treat the bit
+ * as "do not merge / do not hugepage", which is exactly what wipe-on-fork
+ * mappings want.  (Backported from the a6010 3.10 kernel, originally 4.14.)
+ */
+#define VM_WIPEONFORK	0x20000000	/* Wipe VMA contents in child. */
 
 /* Bits set in the VMA until the stack is in its final location */
 #define VM_STACK_INCOMPLETE_SETUP	(VM_RAND_READ | VM_SEQ_READ)

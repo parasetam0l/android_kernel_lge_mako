@@ -407,6 +407,7 @@
 #define __NR_seccomp			(__NR_SYSCALL_BASE+383)
 #define __NR_getrandom			(__NR_SYSCALL_BASE+384)
 #define __NR_memfd_create		(__NR_SYSCALL_BASE+385)
+#define __NR_close_range		(__NR_SYSCALL_BASE+436)
 
 /*
  * The following SWIs are ARM private.
@@ -423,7 +424,7 @@
  * account for the padding in the syscall table
  */
 #ifdef __KERNEL__
-#define __NR_syscalls  (388)
+#define __NR_syscalls  (437)
 #endif
 
 /*
