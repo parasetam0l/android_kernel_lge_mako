@@ -182,7 +182,9 @@ void panic(const char *fmt, ...)
 		 * shutting down.  But if there is a chance of
 		 * rebooting the system it will be rebooted.
 		 */
-		emergency_restart();
+		/* mako: reboot to bootloader (fastboot) so last_kmsg survives
+		 * and the device lands in a state we can recover from. */
+		machine_restart("bootloader");
 	}
 #ifdef __sparc__
 	{

@@ -2830,6 +2830,13 @@ static int __devinit android_probe(struct platform_device *pdev)
 	}
 
 	android_dev = kzalloc(sizeof(*android_dev), GFP_KERNEL);
+	if (android_dev)
+		/* mako bring-up: the modern adbd requires the functionfs transport.
+		 * Default the f_ffs aliases to "adb" so the gadget's "adb" function
+		 * resolves to functionfs even when the init-time aliases sysfs
+		 * write races the gadget setup (legacy f_adb is useless to it). */
+		strlcpy(android_dev->ffs_aliases, "adb",
+			sizeof(android_dev->ffs_aliases));
 	if (!android_dev) {
 		pr_err("%s(): Failed to alloc memory for android_dev\n",
 			__func__);

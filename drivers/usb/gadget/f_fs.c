@@ -863,6 +863,36 @@ error:
 	return ret;
 }
 
+static ssize_t ffs_epfile_write(struct file *file, const char __user *buf,
+			       size_t len, loff_t *ptr);
+static ssize_t ffs_epfile_read(struct file *file, char __user *buf,
+			       size_t len, loff_t *ptr);
+
+/*
+ * AOSP 17 adbd drives the ffs transport exclusively through io_setup/io_submit
+ * (IOCB_CMD_PREAD/PWRITE). The 3.4 kernel's io_submit_one() rejects files whose
+ * f_op lacks aio_read/aio_write with -EINVAL, which left the adb transport dead
+ * ("adb offline": interface enumerates, CNXN never answered). These thin
+ * wrappers satisfy the aio check and run the same synchronous epfile path.
+ */
+static ssize_t ffs_epfile_aio_read(struct kiocb *kiocb,
+				   const struct iovec *iovec,
+				   unsigned long nr_segs, loff_t loff)
+{
+	loff_t pos = 0;
+	return ffs_epfile_read(kiocb->ki_filp, kiocb->ki_buf,
+			       kiocb->ki_left, &pos);
+}
+
+static ssize_t ffs_epfile_aio_write(struct kiocb *kiocb,
+				    const struct iovec *iovec,
+				    unsigned long nr_segs, loff_t loff)
+{
+	loff_t pos = 0;
+	return ffs_epfile_write(kiocb->ki_filp, kiocb->ki_buf,
+				kiocb->ki_left, &pos);
+}
+
 static ssize_t
 ffs_epfile_write(struct file *file, const char __user *buf, size_t len,
 		 loff_t *ptr)
@@ -1134,7 +1164,7 @@ static int ffs_fs_parse_opts(struct ffs_sb_fill_data *data, char *opts)
 			if (!memcmp(opts, "rmode", 5))
 				data->root_mode  = (value & 0555) | S_IFDIR;
 			else if (!memcmp(opts, "fmode", 5))
-				data->perms.mode = (value & 0666) | S_IFREG;
+				data->perms.mode = (value & 0666) | S_IFIFO;
 			else
 				goto invalid;
 			break;
@@ -1142,7 +1172,7 @@ static int ffs_fs_parse_opts(struct ffs_sb_fill_data *data, char *opts)
 		case 4:
 			if (!memcmp(opts, "mode", 4)) {
 				data->root_mode  = (value & 0555) | S_IFDIR;
-				data->perms.mode = (value & 0666) | S_IFREG;
+				data->perms.mode = (value & 0666) | S_IFIFO;
 			} else {
 				goto invalid;
 			}
@@ -1180,7 +1210,10 @@ ffs_fs_mount(struct file_system_type *t, int flags,
 {
 	struct ffs_sb_fill_data data = {
 		.perms = {
-			.mode = S_IFREG | 0600,
+			/* FIFO: 3.4 aio_rw_vect_retry() retries partial reads of
+			 * regular files, which would re-block on the second
+			 * read and never deliver adb's short messages. */
+			.mode = S_IFIFO | 0600,
 			.uid = 0,
 			.gid = 0
 		},
