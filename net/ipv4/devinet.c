@@ -93,6 +93,8 @@ static const struct nla_policy ifa_ipv4_policy[IFA_MAX+1] = {
 	[IFA_ADDRESS]   	= { .type = NLA_U32 },
 	[IFA_BROADCAST] 	= { .type = NLA_U32 },
 	[IFA_LABEL]     	= { .type = NLA_STRING, .len = IFNAMSIZ - 1 },
+	[IFA_CACHEINFO]		= { .len = sizeof(struct ifa_cacheinfo) },
+	[IFA_FLAGS]		= { .type = NLA_U32 },
 };
 
 /* inet_addr_hash's shifting is dependent upon this IN4_ADDR_HSIZE
@@ -626,7 +628,8 @@ static struct in_ifaddr *rtm_to_ifaddr(struct net *net, struct nlmsghdr *nlh)
 	INIT_HLIST_NODE(&ifa->hash);
 	ifa->ifa_prefixlen = ifm->ifa_prefixlen;
 	ifa->ifa_mask = inet_make_mask(ifm->ifa_prefixlen);
-	ifa->ifa_flags = ifm->ifa_flags;
+	ifa->ifa_flags = tb[IFA_FLAGS] ? nla_get_u32(tb[IFA_FLAGS]) :
+					 ifm->ifa_flags;
 	ifa->ifa_scope = ifm->ifa_scope;
 	ifa->ifa_dev = in_dev;
 
@@ -647,10 +650,28 @@ errout:
 	return ERR_PTR(err);
 }
 
+static struct in_ifaddr *find_matching_ifa(struct in_ifaddr *ifa)
+{
+	struct in_device *in_dev = ifa->ifa_dev;
+	struct in_ifaddr *ifa1, **ifap;
+
+	if (!ifa->ifa_local)
+		return NULL;
+
+	for (ifap = &in_dev->ifa_list; (ifa1 = *ifap) != NULL;
+	     ifap = &ifa1->ifa_next) {
+		if (ifa1->ifa_mask == ifa->ifa_mask &&
+		    inet_ifa_match(ifa1->ifa_address, ifa) &&
+		    ifa1->ifa_local == ifa->ifa_local)
+			return ifa1;
+	}
+	return NULL;
+}
+
 static int inet_rtm_newaddr(struct sk_buff *skb, struct nlmsghdr *nlh, void *arg)
 {
 	struct net *net = sock_net(skb->sk);
-	struct in_ifaddr *ifa;
+	struct in_ifaddr *ifa, *ifa_existing;
 
 	ASSERT_RTNL();
 
@@ -658,7 +679,27 @@ static int inet_rtm_newaddr(struct sk_buff *skb, struct nlmsghdr *nlh, void *arg
 	if (IS_ERR(ifa))
 		return PTR_ERR(ifa);
 
-	return __inet_insert_ifa(ifa, nlh, NETLINK_CB(skb).pid);
+	ifa_existing = find_matching_ifa(ifa);
+	if (!ifa_existing) {
+		/* It would be best to check for !NLM_F_CREATE here but
+		 * userspace already relies on not having to provide this.
+		 * mako bring-up: ported from 3.10 (a6010) - Android's
+		 * NetworkStack re-adds the same DHCP lease (RTM_NEWADDR
+		 * with NLM_F_REPLACE) on renew/reconnect; without the
+		 * replace path the add returns -EEXIST and wifi DHCP
+		 * provisioning fails ("Obtaining IP address" loop). */
+		return __inet_insert_ifa(ifa, nlh, NETLINK_CB(skb).pid);
+	} else {
+		inet_free_ifa(ifa);
+
+		if (nlh->nlmsg_flags & NLM_F_EXCL ||
+		    !(nlh->nlmsg_flags & NLM_F_REPLACE))
+			return -EEXIST;
+		ifa = ifa_existing;
+		rtmsg_ifa(RTM_NEWADDR, ifa, nlh, NETLINK_CB(skb).pid);
+		blocking_notifier_call_chain(&inetaddr_chain, NETDEV_UP, ifa);
+	}
+	return 0;
 }
 
 /*
@@ -1256,6 +1297,7 @@ static inline size_t inet_nlmsg_size(void)
 	       + nla_total_size(4) /* IFA_ADDRESS */
 	       + nla_total_size(4) /* IFA_LOCAL */
 	       + nla_total_size(4) /* IFA_BROADCAST */
+	       + nla_total_size(4) /* IFA_FLAGS */
 	       + nla_total_size(IFNAMSIZ); /* IFA_LABEL */
 }
 
@@ -1287,6 +1329,14 @@ static int inet_fill_ifaddr(struct sk_buff *skb, struct in_ifaddr *ifa,
 
 	if (ifa->ifa_label[0])
 		NLA_PUT_STRING(skb, IFA_LABEL, ifa->ifa_label);
+
+	/* mako bring-up: the modern NetworkStack (IpClientLinkObserver)
+	 * requires the IFA_FLAGS attribute in RTM_NEWADDR notifications
+	 * (added in 3.10); without it the address event is rejected as
+	 * unparsable, LinkProperties stays empty and wifi provisioning
+	 * fails with "IP configuration failure". */
+	if (nla_put_u32(skb, IFA_FLAGS, ifa->ifa_flags))
+		goto nla_put_failure;
 
 	return nlmsg_end(skb, nlh);
 
