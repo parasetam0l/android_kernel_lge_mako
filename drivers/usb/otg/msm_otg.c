@@ -852,6 +852,15 @@ static int msm_otg_suspend(struct msm_otg *motg)
 	unsigned ret;
 	u32 portsc;
 
+	/* mako bring-up: never allow the USB PHY to enter low power mode.
+	 * The full LPM sequence (PHCD set + clock/regulator shutdown) wedges
+	 * the ulpi bus and leaves clk/regulator refcounts unbalanced after a
+	 * gadget disable/switch cycle, permanently killing USB (adb goes
+	 * offline and the device never re-enumerates, even on replug). */
+	atomic_set(&motg->in_lpm, 0);
+	wake_lock(&motg->wlock);
+	return 0;
+
 	if (atomic_read(&motg->in_lpm))
 		return 0;
 
@@ -1005,12 +1014,14 @@ static int msm_otg_suspend(struct msm_otg *motg)
 	if (bus)
 		clear_bit(HCD_FLAG_HW_ACCESSIBLE, &(bus_to_hcd(bus))->flags);
 
-	/* mako bring-up: keep the USB PHY/controller out of low power mode.
-	 * The LPM suspends the data path, leaving the modern adbd's functionfs
-	 * transport half-dead ("adb offline" on the host). Recovery boots that
-	 * skip LPM have fully working adb. */
-	atomic_set(&motg->in_lpm, 0);
-	wake_lock(&motg->wlock);
+	atomic_set(&motg->in_lpm, 1);
+	/* Enable ASYNC IRQ (if present) during LPM */
+	if (motg->async_irq)
+		enable_irq(motg->async_irq);
+	enable_irq(motg->irq);
+	wake_unlock(&motg->wlock);
+
+	dev_info(phy->dev, "USB in low power mode\n");
 
 	return 0;
 }

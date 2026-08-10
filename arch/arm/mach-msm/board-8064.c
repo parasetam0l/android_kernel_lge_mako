@@ -944,6 +944,13 @@ static int phy_init_seq[] = {
 
 static struct msm_otg_platform_data msm_otg_pdata = {
 	.mode			= USB_OTG,
+	/* mako bring-up: transient VBUS glitches (PMIC CHG_GONE) trigger the
+	 * OTG disconnect path; msm_otg_reset's phy_reset then wedges the ulpi
+	 * bus (read/write timeouts) and the gadget never re-enumerates -
+	 * adb stays offline even after unplug/replug. Skip PHY/LINK resets
+	 * on cable events; the single calibration reset on first connect
+	 * is kept. */
+	.disable_reset_on_disconnect	= true,
 	.otg_control		= OTG_PMIC_CONTROL,
 	.phy_type		= SNPS_28NM_INTEGRATED_PHY,
 	.pmic_id_irq		= PM8921_USB_ID_IN_IRQ(PM8921_IRQ_BASE),
