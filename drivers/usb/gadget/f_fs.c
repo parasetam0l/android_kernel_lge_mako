@@ -806,8 +806,6 @@ static void ffs_user_copy_worker(struct work_struct *work)
 static void ffs_epfile_async_io_complete(struct usb_ep *_ep, struct usb_request *req)
 {
 	struct ffs_io_data *io_data = req->context;
-	pr_info("ffsdbg: async complete status=%d actual=%d\n",
-		req->status, req->actual);
 	ENTER();
 	INIT_WORK(&io_data->work, ffs_user_copy_worker);
 	schedule_work(&io_data->work);
@@ -846,9 +844,6 @@ static ssize_t ffs_epfile_io(struct file *file, struct ffs_io_data *io_data)
 		mutex_unlock(&epfile->mutex);
 
 first_try:
-		pr_info("ffsdbg: io %s len=%zu aio=%d\n",
-			io_data->read ? "read" : "write", io_data->len,
-			io_data->aio ? 1 : 0);
 		/* Are we still active? */
 		if (WARN_ON(epfile->ffs->state != FFS_ACTIVE)) {
 			ret = -ENODEV;
@@ -869,9 +864,6 @@ first_try:
 			}
 		}
 
-		pr_info("ffsdbg: ep=%s epfile_in=%d halt_check=%d\n",
-			ep && ep->ep ? ep->ep->name : "none",
-			epfile->in ? 1 : 0, (!io_data->read == !epfile->in) ? 1 : 0);
 		/* Do we halt? */
 		halt = (!io_data->read == !epfile->in);
 		if (halt && epfile->isoc) {
@@ -939,15 +931,12 @@ first_try:
 			req->context  = io_data;
 			req->complete = ffs_epfile_async_io_complete;
 			
-			pr_info("ffsdbg: async queue ret=%zd\n", (ssize_t)ret);
 			ret = usb_ep_queue(ep->ep, req, GFP_ATOMIC);
 			if (unlikely(ret)) {
 				io_data->req = NULL;
 				usb_ep_free_request(ep->ep, req);
-				pr_info("ffsdbg: async queue FAILED ret=%zd\n", (ssize_t)ret);
 				goto error_unlock;
 			}
-			pr_info("ffsdbg: async queued ok\n");
 			ret = -EIOCBQUEUED;
 			spin_unlock_irq(&epfile->ffs->eps_lock);
 			mutex_unlock(&epfile->mutex);
@@ -2524,7 +2513,6 @@ static int ffs_func_set_alt(struct usb_function *f,
 	if (ffs->func)
 		ffs_func_eps_disable(ffs->func);
 
-	pr_info("ffsdbg: set_alt intf=%u alt=%u\n", interface, alt);
 	if (ffs->state != FFS_ACTIVE)
 		return -ENODEV;
 

@@ -355,6 +355,7 @@
 #define __NR_fstatat64			(__NR_SYSCALL_BASE+327)
 #define __NR_unlinkat			(__NR_SYSCALL_BASE+328)
 #define __NR_renameat			(__NR_SYSCALL_BASE+329)
+#define __NR_renameat2			(__NR_SYSCALL_BASE+382)
 #define __NR_linkat			(__NR_SYSCALL_BASE+330)
 #define __NR_symlinkat			(__NR_SYSCALL_BASE+331)
 #define __NR_readlinkat			(__NR_SYSCALL_BASE+332)

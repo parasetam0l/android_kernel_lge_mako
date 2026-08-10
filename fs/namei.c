@@ -4060,6 +4060,21 @@ SYSCALL_DEFINE2(rename, const char __user *, oldname, const char __user *, newna
 	return sys_renameat(AT_FDCWD, oldname, AT_FDCWD, newname);
 }
 
+/*
+ * mako bring-up: bionic's rename()/renameat() go through renameat2().
+ * The 3.4 kernel predates that syscall so every rename returned ENOSYS.
+ * Provide renameat2 (syscall 382, asm-generic numbering); only flags==0
+ * (plain rename) is supported, which is all bionic uses.
+ */
+SYSCALL_DEFINE5(renameat2, int, olddfd, const char __user *, oldname,
+		int, newdfd, const char __user *, newname, unsigned int, flags)
+{
+	if (flags)
+		return -EINVAL;
+	return sys_renameat(olddfd, oldname, newdfd, newname);
+}
+
+
 int vfs_readlink(struct dentry *dentry, char __user *buffer, int buflen, const char *link)
 {
 	int len;
