@@ -15,7 +15,10 @@ CONFIG_CGROUP_FREEZER=y
 CONFIG_CGROUP_CPUACCT=y
 CONFIG_RESOURCE_COUNTERS=y
 CONFIG_CGROUP_SCHED=y
-CONFIG_RT_GROUP_SCHED=y
+# CONFIG_RT_GROUP_SCHED is not set
+# mako bring-up: RT_GROUP_SCHED rejects SCHED_FIFO tasks in cgroups
+# with no cpu.rt_runtime_us (all Android app cgroups); the BT stack
+# needs SCHED_FIFO prio 1
 CONFIG_NAMESPACES=y
 # Android 17 requirements (mako bring-up)
 CONFIG_CPUSETS=y

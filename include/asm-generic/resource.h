@@ -85,7 +85,7 @@
 	[RLIMIT_SIGPENDING]	= { 		0,	       0 },	\
 	[RLIMIT_MSGQUEUE]	= {   MQ_BYTES_MAX,   MQ_BYTES_MAX },	\
 	[RLIMIT_NICE]		= { 0, 0 },				\
-	[RLIMIT_RTPRIO]		= { 0, 0 },				\
+	[RLIMIT_RTPRIO]		= { 4, 4 },	/* mako bring-up: RT budget for BT stack (SCHED_FIFO prio 1) */	\
 	[RLIMIT_RTTIME]		= {  RLIM_INFINITY,  RLIM_INFINITY },	\
 }
 
