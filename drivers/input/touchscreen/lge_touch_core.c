@@ -37,6 +37,10 @@
 
 #include <linux/input/lge_touch_core.h>
 
+static int touch_wake_enable = 1;
+module_param(touch_wake_enable, int, 0644);
+MODULE_PARM_DESC(touch_wake_enable, "Enable double-tap-to-wake while the screen is off");
+
 struct touch_device_driver*     touch_device_func;
 struct workqueue_struct*        touch_wq;
 
@@ -832,6 +836,35 @@ static void touch_work_func(struct work_struct *work)
 
 	if (likely(ts->pdata->role->operation_mode == INTERRUPT_MODE))
 		int_pin = gpio_get_value(ts->pdata->int_pin);
+
+	if (unlikely(!ts->curr_resume_state && touch_wake_enable)) {
+		/* Double-tap to wake while the screen is off */
+		static ktime_t first_tap_time;
+		static u16 first_tap_x, first_tap_y;
+		static int prev_tap_count;
+		int fingers = ts->ts_data.total_num;
+		if (fingers > 0 && prev_tap_count == 0) {
+			ktime_t now = ktime_get();
+			s64 elapsed = ktime_to_ms(ktime_sub(now, first_tap_time));
+			u16 x = ts->ts_data.curr_data[0].x_position;
+			u16 y = ts->ts_data.curr_data[0].y_position;
+			if (elapsed > 0 && elapsed < 500 &&
+			    abs(x - first_tap_x) < 200 && abs(y - first_tap_y) < 200) {
+				/* Double tap detected: wake the system */
+				input_report_key(ts->input_dev, KEY_WAKEUP, 1);
+				input_sync(ts->input_dev);
+				input_report_key(ts->input_dev, KEY_WAKEUP, 0);
+				input_sync(ts->input_dev);
+				first_tap_time = ktime_set(0, 0);
+			} else {
+				first_tap_time = now;
+				first_tap_x = x;
+				first_tap_y = y;
+			}
+		}
+		prev_tap_count = fingers;
+		goto out;
+	}
 
 	/* Accuracy Solution */
 	if (likely(ts->pdata->role->accuracy_filter_enable)) {
@@ -1811,6 +1844,8 @@ static int touch_probe(struct i2c_client *client,
 	set_bit(INPUT_PROP_DIRECT, ts->input_dev->propbit);
 #endif
 
+	input_set_capability(ts->input_dev, EV_KEY, KEY_WAKEUP);
+
 	if (ts->pdata->caps->button_support) {
 		set_bit(EV_KEY, ts->input_dev->evbit);
 		for (ret = 0; ret < ts->pdata->caps->number_of_button; ret++) {
@@ -2011,9 +2046,12 @@ static int touch_suspend(struct i2c_client *client, pm_message_t mesg)
 		return 0;
 	}
 
-	if (ts->pdata->role->operation_mode == INTERRUPT_MODE)
-		disable_irq(ts->client->irq);
-	else
+	if (ts->pdata->role->operation_mode == INTERRUPT_MODE) {
+		if (touch_wake_enable)
+			enable_irq_wake(ts->client->irq);
+		else
+			disable_irq(ts->client->irq);
+	} else
 		hrtimer_cancel(&ts->timer);
 
 	cancel_work_sync(&ts->work);
@@ -2041,9 +2079,11 @@ static int touch_resume(struct i2c_client *client)
 
 	touch_power_cntl(ts, ts->pdata->role->resume_pwr);
 
-	if (ts->pdata->role->operation_mode == INTERRUPT_MODE)
+	if (ts->pdata->role->operation_mode == INTERRUPT_MODE) {
+		if (touch_wake_enable)
+			disable_irq_wake(ts->client->irq);
 		enable_irq(ts->client->irq);
-	else
+	} else
 		hrtimer_start(&ts->timer,
 			ktime_set(0, ts->pdata->role->report_period),
 					HRTIMER_MODE_REL);
