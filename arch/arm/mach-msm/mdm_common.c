@@ -1108,6 +1108,15 @@ static int __devinit mdm_modem_probe(struct platform_device *pdev)
 			   __func__, mdev->mdm_data.device_id);
 
 		mdm_device_list_add(mdev);
+		/*
+		 * Register the VDDmin gpios with the RPM so the AP can wake the
+		 * modem from its low-power mode. Without this handshake the modem
+		 * stays in Vddmin/LPM and qcril's radio power-on times out at
+		 * boot (modem LPM, RADIO_POWER GENERIC_FAILURE after 60s). Must
+		 * run after mdm_device_list_add(): the setup walks the device
+		 * list.
+		 */
+		mdm_setup_vddmin_gpios();
 		INIT_DELAYED_WORK(&mdev->mdm2ap_status_check_work,
 					mdm2ap_status_check);
 		INIT_WORK(&mdev->mdm_status_work, mdm_status_fn);
