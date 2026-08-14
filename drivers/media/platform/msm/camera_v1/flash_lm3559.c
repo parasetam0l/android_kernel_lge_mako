@@ -262,10 +262,13 @@ static void lm3559_flash_led_set(struct led_classdev *led_cdev,
 
 	led_cdev->brightness = value;
 
-	if (value)
+	if (value) {
+		if (lm3559_onoff_state != LM3559_POWER_ON)
+			lm3559_led_enable();
 		lm3559_enable_torch_mode(LM3559_LED_LOW);
-	else
+	} else {
 		lm3559_led_disable();
+	}
 }
 
 static struct led_classdev lm3559_flash_led = {
