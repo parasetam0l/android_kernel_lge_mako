@@ -2082,7 +2082,8 @@ static int touch_resume(struct i2c_client *client)
 	if (ts->pdata->role->operation_mode == INTERRUPT_MODE) {
 		if (touch_wake_enable)
 			disable_irq_wake(ts->client->irq);
-		enable_irq(ts->client->irq);
+		else
+			enable_irq(ts->client->irq);
 	} else
 		hrtimer_start(&ts->timer,
 			ktime_set(0, ts->pdata->role->report_period),
