@@ -185,10 +185,17 @@ static void lm3559_enable_flash_mode(enum led_status state)
 static int lm3559_config_gpio_on(void)
 {
 	int rc = 0;
-	pr_debug("%s\n", __func__);
 
+	/* The GPIO is requested once at probe and held for the driver's
+	 * lifetime: the LED-sysfs torch path (lm3559_flash_led_set) can run
+	 * without any camera open, and a bare gpio_set_value_cansleep() on an
+	 * unrequested GPIO is a silent no-op that left the chip unpowered
+	 * (every I2C write NAK'd with "slave addr not connected"). */
 	rc = gpio_request(lm3559_led_flash_pdata->gpio_en, "cam_flash_en");
-	if (rc < 0) {
+	if (rc == -EBUSY) {
+		/* already held (re-init after camera release) */
+		rc = 0;
+	} else if (rc < 0) {
 		pr_warn("%s: gpio_request failed: %d\n", __func__, rc);
 		return rc;
 	}
@@ -203,14 +210,17 @@ static void lm3559_config_gpio_off(void)
 {
 	pr_info("%s\n", __func__);
 
-	gpio_direction_input(lm3559_led_flash_pdata->gpio_en);
-	gpio_free(lm3559_led_flash_pdata->gpio_en);
+	/* Do not free the GPIO: the driver owns it for its lifetime (see
+	 * lm3559_config_gpio_on). Just drive EN low to power the chip down. */
+	gpio_direction_output(lm3559_led_flash_pdata->gpio_en, 0);
 }
 
 static void lm3559_led_enable(void)
 {
 	pr_info("%s\n", __func__);
 	gpio_set_value_cansleep(lm3559_led_flash_pdata->gpio_en, 1);
+	/* lm3559 datasheet: minimum EN high to I2C-ready time */
+	usleep_range(1000, 2000);
 	lm3559_onoff_state = LM3559_POWER_ON;
 }
 
@@ -294,9 +304,16 @@ static int lm3559_probe(struct i2c_client *client, const struct i2c_device_id *i
 		return err;
 	}
 
+	err = lm3559_config_gpio_on();
+	if (err < 0) {
+		led_classdev_unregister(&lm3559_flash_led);
+		pr_err("%s: failed to claim enable GPIO\n", __func__);
+		return err;
+	}
+
 	pr_debug("%s: done\n", __func__);
 
-	return err;
+	return 0;
 }
 
 static int lm3559_remove(struct i2c_client *client)
