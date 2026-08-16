@@ -41,6 +41,8 @@
 #include <linux/miscdevice.h>
 #include <linux/delay.h>
 #include <linux/slab.h>
+#include <linux/kthread.h>
+#include <linux/random.h>
 #include <asm/uaccess.h>
 
 
@@ -54,6 +56,8 @@ static LIST_HEAD(rng_list);
 static DEFINE_MUTEX(rng_mutex);
 static int data_avail;
 static u8 *rng_buffer;
+static struct task_struct *hwrng_fill;
+static u8 *rng_fillbuf;
 
 static size_t rng_buffer_size(void)
 {
@@ -99,6 +103,40 @@ static inline int rng_get_data(struct hwrng *rng, u8 *buffer, size_t size,
 		return rng->data_read(rng, (u32 *)buffer);
 
 	return 0;
+}
+
+/*
+ * mako bring-up: ported from 3.10. Background thread that continuously
+ * drains the hardware RNG into the kernel entropy pool. Without it the 3.4
+ * pool only gets interrupt-timing entropy and takes ~30s to initialize,
+ * stalling every getrandom() caller early in boot (odsign, keystore2).
+ */
+static int hwrng_fillfn(void *unused)
+{
+	long rc;
+
+	while (!kthread_should_stop()) {
+		if (!current_rng)
+			break;
+		rc = rng_get_data(current_rng, rng_fillbuf,
+				  rng_buffer_size(), 1);
+		if (rc <= 0) {
+			msleep_interruptible(10000);
+			continue;
+		}
+		add_hwgenerator_randomness((void *)rng_fillbuf, rc, rc * 8);
+	}
+	hwrng_fill = NULL;
+	return 0;
+}
+
+static void start_khwrngd(void)
+{
+	hwrng_fill = kthread_run(hwrng_fillfn, NULL, "hwrng");
+	if (hwrng_fill == ERR_PTR(-ENOMEM)) {
+		pr_err("hwrng_fill thread creation failed");
+		hwrng_fill = NULL;
+	}
 }
 
 static ssize_t rng_dev_read(struct file *filp, char __user *buf,
@@ -319,6 +357,11 @@ int hwrng_register(struct hwrng *rng)
 		if (!rng_buffer)
 			goto out_unlock;
 	}
+	if (!rng_fillbuf) {
+		rng_fillbuf = kmalloc(rng_buffer_size(), GFP_KERNEL);
+		if (!rng_fillbuf)
+			goto out_unlock;
+	}
 
 	/* Must not register two RNGs with the same name. */
 	err = -EEXIST;
@@ -348,6 +391,8 @@ int hwrng_register(struct hwrng *rng)
 	}
 	INIT_LIST_HEAD(&rng->list);
 	list_add_tail(&rng->list, &rng_list);
+	if (rng == current_rng)
+		start_khwrngd();
 out_unlock:
 	mutex_unlock(&rng_mutex);
 out:
@@ -358,6 +403,11 @@ EXPORT_SYMBOL_GPL(hwrng_register);
 void hwrng_unregister(struct hwrng *rng)
 {
 	int err;
+
+	if (hwrng_fill) {
+		kthread_stop(hwrng_fill);
+		hwrng_fill = NULL;
+	}
 
 	mutex_lock(&rng_mutex);
 

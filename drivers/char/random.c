@@ -631,6 +631,24 @@ retry:
 	}
 }
 
+/*
+ * mako bring-up: ported from 3.10. Feed entropy gathered from a hardware
+ * random number generator into the input pool. The 3.4 core lacks this, so
+ * the pool only got entropy from interrupt timing and took ~30s to
+ * initialize, blocking every getrandom() caller (odsign, keystore2).
+ */
+void add_hwgenerator_randomness(const char *buffer, size_t count,
+				size_t entropy)
+{
+	/* Suspend writing if we're above the trickle threshold. */
+	wait_event_interruptible(random_write_wait,
+			ACCESS_ONCE(input_pool.entropy_count) <=
+					random_read_wakeup_thresh);
+	mix_pool_bytes(&input_pool, buffer, count, NULL);
+	credit_entropy_bits(&input_pool, entropy);
+}
+EXPORT_SYMBOL_GPL(add_hwgenerator_randomness);
+
 /*********************************************************************
  *
  * Entropy input management
