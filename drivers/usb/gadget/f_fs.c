@@ -776,6 +776,7 @@ static void ffs_user_copy_worker(struct work_struct *work)
 {
 	struct ffs_io_data *io_data = container_of(work, struct ffs_io_data, work);
 	int ret = io_data->req->status ? io_data->req->status : io_data->req->actual;
+	bool cancelled;
 
 	if (io_data->read && ret > 0) {
 		int i;
@@ -793,7 +794,16 @@ static void ffs_user_copy_worker(struct work_struct *work)
 		unuse_mm(io_data->mm);
 	}
 
+	/*
+	 * mako bring-up: 3.4's aio cancellation paths (kill_ctx at process
+	 * exit, io_cancel) hold an extra kiocb reference. Release it here,
+	 * or the exiting process hangs in exit_aio/kill_ctx forever and
+	 * adbd can never restart (adb root leaves the transport dead).
+	 */
+	cancelled = kiocbIsCancelled(io_data->kiocb);
 	aio_complete(io_data->kiocb, ret, ret);
+	if (cancelled)
+		aio_put_req(io_data->kiocb);
 
 	usb_ep_free_request(io_data->ep, io_data->req);
 
