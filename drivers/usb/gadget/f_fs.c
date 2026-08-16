@@ -487,6 +487,21 @@ static ssize_t ffs_ep0_write(struct file *file, const char __user *buf,
 				return ret;
 			}
 
+			/*
+			 * mako bring-up: if the gadget is already connected and the host
+			 * has configured our interface, the composite layer will not send
+			 * another SET_INTERFACE after this (re)registration (adbd restart,
+			 * or a cable replug that raced with the re-registration), so the
+			 * endpoints would stay disabled forever and the transport would be
+			 * dead (adb offline / adb root hang). Re-enable them here.
+			 */
+			if (ffs->func && ffs->func->gadget &&
+			    ffs->func->gadget->speed != USB_SPEED_UNKNOWN &&
+			    !ffs->epfiles[0].ep) {
+				pr_info("ffs: gadget connected, re-enabling endpoints after registration\n");
+				ffs_func_eps_enable(ffs->func);
+			}
+
 			set_bit(FFS_FL_CALL_CLOSED_CALLBACK, &ffs->flags);
 			return len;
 		}
@@ -776,8 +791,11 @@ static void ffs_user_copy_worker(struct work_struct *work)
 {
 	struct ffs_io_data *io_data = container_of(work, struct ffs_io_data, work);
 	int ret = io_data->req->status ? io_data->req->status : io_data->req->actual;
+
 	bool cancelled;
 
+	if (ret < 0)
+		pr_warn("ffs: aio completion error %ld\n", ret);
 	if (io_data->read && ret > 0) {
 		int i;
 		size_t pos = 0;
@@ -2523,8 +2541,18 @@ static int ffs_func_set_alt(struct usb_function *f,
 	if (ffs->func)
 		ffs_func_eps_disable(ffs->func);
 
-	if (ffs->state != FFS_ACTIVE)
-		return -ENODEV;
+	if (ffs->state != FFS_ACTIVE) {
+		/*
+		 * mako bring-up: adbd may still be (re)registering when the host's
+		 * SET_CONFIGURATION/SET_INTERFACE arrives (first boot race, cable
+		 * replug racing the re-registration). Rejecting here makes the
+		 * composite reject the whole configuration and the gadget never
+		 * recovers; accept instead and let the registration path in
+		 * ffs_ep0_write() re-enable the endpoints.
+		 */
+		pr_info("ffs: set_alt deferred (state=%d), accepting configuration\n", ffs->state);
+		return 0;
+	}
 
 	if (alt == (unsigned)-1) {
 		ffs->func = NULL;

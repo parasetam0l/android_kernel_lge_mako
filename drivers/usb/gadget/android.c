@@ -481,6 +481,7 @@ static int functionfs_ready_callback(struct ffs_data *ffs)
 
 	mutex_lock(&dev->mutex);
 
+	pr_info("functionfs: ready callback, bind\n");
 	ret = functionfs_bind(ffs, dev->cdev);
 	if (ret)
 		goto err;
@@ -503,6 +504,7 @@ static void functionfs_closed_callback(struct ffs_data *ffs)
 
 	mutex_lock(&dev->mutex);
 
+	pr_info("functionfs: closed callback (enabled=%d)\n", config->enabled);
 	if (config->enabled)
 		android_disable(dev);
 

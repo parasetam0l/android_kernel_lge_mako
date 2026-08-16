@@ -3256,7 +3256,6 @@ static int ci13xxx_pullup(struct usb_gadget *_gadget, int is_active)
 
 	return 0;
 }
-
 static int ci13xxx_start(struct usb_gadget_driver *driver,
 		int (*bind)(struct usb_gadget *));
 static int ci13xxx_stop(struct usb_gadget_driver *driver);
